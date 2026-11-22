@@ -240,12 +240,28 @@ void Adafruit_SSD1327::display(void) {
   Serial.println(")");
   */
 
-  int16_t row_start =
-      min((int16_t)(bytes_per_row - 1), (int16_t)(window_x1 / 2));
-  int16_t row_end = max((int16_t)0, (int16_t)(window_x2 / 2));
+  // MiniSumoV2: display() runs on DisplayThread while the Robot task keeps drawing. Take the
+  // dirty window and reset it up front, with the scheduler suspended so no drawPixel() can
+  // interleave; whatever is drawn during the transfer marks the window again and goes out with
+  // the next display(). (Resetting it after the transfer, as upstream does, dropped the
+  // marks of pixels drawn meanwhile, so they never reached the panel.)
+  vTaskSuspendAll();
+  const int16_t wx1 = window_x1, wy1 = window_y1, wx2 = window_x2, wy2 = window_y2;
+  window_x1 = 1024;
+  window_y1 = 1024;
+  window_x2 = -1;
+  window_y2 = -1;
+  (void)xTaskResumeAll();
+  if ((wx2 < wx1) || (wy2 < wy1)) {
+    return; // nothing drawn since the last display()
+  }
 
-  int16_t first_row = min((int16_t)(rows - 1), (int16_t)window_y1);
-  int16_t last_row = max((int16_t)0, (int16_t)window_y2);
+  int16_t row_start =
+      min((int16_t)(bytes_per_row - 1), (int16_t)(wx1 / 2));
+  int16_t row_end = max((int16_t)0, (int16_t)(wx2 / 2));
+
+  int16_t first_row = min((int16_t)(rows - 1), (int16_t)wy1);
+  int16_t last_row = max((int16_t)0, (int16_t)wy2);
 
   /*
   Serial.print("Rows: ");
@@ -293,12 +309,6 @@ void Adafruit_SSD1327::display(void) {
     // Set low speed clk
     i2c_dev->setSpeed(i2c_postclk);
   }
-
-  // reset dirty window
-  window_x1 = 1024;
-  window_y1 = 1024;
-  window_x2 = -1;
-  window_y2 = -1;
 }
 
 /*!
